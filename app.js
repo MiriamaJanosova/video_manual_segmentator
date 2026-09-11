@@ -262,9 +262,34 @@ function setControlsEnabled(enabled) {
 
 btnOpenVideo.addEventListener('click', () => videoFileInput.click());
 
-videoFileInput.addEventListener('change', () => {
+videoFileInput.addEventListener('change', async () => {
   const file = videoFileInput.files[0];
   if (!file) return;
+
+  // Each video gets its own Repetitions session — otherwise the table
+  // below keeps accumulating across every video opened this sitting into
+  // one long, hard-to-scan list, and "Check" can only ever review the
+  // currently open video anyway. Force a save of anything pending first
+  // so switching videos never silently loses unsaved marks.
+  if (sessionRows.length > 0) {
+    const ok = confirm(
+      `Save the ${sessionRows.length} unsaved repetition(s) for the current video before switching?\n\n` +
+      `OK — save, then open the new video.\nCancel — stay on the current video.`
+    );
+    if (!ok) { videoFileInput.value = ''; return; }
+    if (!(await saveCsv())) {
+      videoFileInput.value = '';
+      status('Save was not completed — video not switched.', 'error');
+      return;
+    }
+    // Now safely on disk; fold into history (so rep-numbering/overlap
+    // checks still see them if this video is reopened later) and clear
+    // the visible table for the incoming video.
+    loadedRows = loadedRows.concat(sessionRows);
+    sessionRows = [];
+    renderTable();
+  }
+
   const url = URL.createObjectURL(file);
   video.src = url;
   video.load();
@@ -834,9 +859,13 @@ function downloadTextAsFile(text, filename) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-btnSave.addEventListener('click', async () => {
+// Returns true once the current rows have actually been written out
+// (to disk, or downloaded when the browser can't write in place) — false
+// on cancel/failure. Shared by the Save button and the forced save before
+// switching videos, below.
+async function saveCsv() {
   const allRows = loadedRows.concat(sessionRows);
-  if (allRows.length === 0) { status('Nothing to save yet — add at least one repetition.'); return; }
+  if (allRows.length === 0) { status('Nothing to save yet — add at least one repetition.'); return false; }
   const text = buildCsvText(allRows);
 
   if (csvFileHandle) {
@@ -849,7 +878,7 @@ btnSave.addEventListener('click', async () => {
       await writable.write(text);
       await writable.close();
       status(`Saved ${allRows.length} rows to ${csvFileHandle.name}.`, 'success');
-      return;
+      return true;
     } catch (err) {
       status('Could not write to file (' + err.message + ') — falling back to download.', 'error');
     }
@@ -868,9 +897,9 @@ btnSave.addEventListener('click', async () => {
       csvFileNameEl.textContent = `${handle.name} (${allRows.length} rows)`;
       csvFileNameEl.dataset.rawName = handle.name;
       status(`Saved ${allRows.length} rows to ${handle.name}.`, 'success');
-      return;
+      return true;
     } catch (err) {
-      if (err.name === 'AbortError') { status('Save cancelled.'); return; }
+      if (err.name === 'AbortError') { status('Save cancelled.'); return false; }
       status('Save failed (' + err.message + ') — falling back to download.', 'error');
     }
   }
@@ -878,7 +907,10 @@ btnSave.addEventListener('click', async () => {
   const filename = suggestedCsvName();
   downloadTextAsFile(text, filename);
   status(`Downloaded ${allRows.length} rows as ${filename}. Your browser can't save in place, so replace the old file manually if you were appending.`, 'success');
-});
+  return true;
+}
+
+btnSave.addEventListener('click', () => { saveCsv(); });
 
 /* ---------- Keyboard shortcuts ---------- */
 
