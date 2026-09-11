@@ -1,0 +1,346 @@
+:root {
+  color-scheme: light;
+  --bg: #f5f6f8;
+  --panel: #ffffff;
+  --border: #d9dce1;
+  --text: #1c1f24;
+  --muted: #6b7280;
+  --accent: #2563eb;
+  --accent-text: #ffffff;
+  --success: #15803d;
+  --error: #b91c1c;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  padding: 1rem 1.25rem 3rem;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  font-size: 14px;
+  max-width: 1080px;
+  margin-inline: auto;
+}
+
+h1 {
+  font-size: 1.4rem;
+  margin: 0.5rem 0 1rem;
+}
+
+h2 {
+  font-size: 0.95rem;
+  margin: 0 0 0.75rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1rem 1.1rem;
+  margin-bottom: 1rem;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.6rem;
+}
+.row:last-child { margin-bottom: 0; }
+
+.row.rep-form { align-items: flex-end; }
+
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+label.grow { flex: 1 1 auto; width: 100%; }
+
+input, select, button {
+  font: inherit;
+  color: var(--text);
+}
+
+input[type="text"], input[type="number"] {
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fff;
+}
+
+input.full { width: 100%; }
+
+select {
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fff;
+}
+
+button {
+  padding: 0.45rem 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) { border-color: var(--accent); }
+
+button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+#btnSave {
+  background: var(--accent);
+  color: var(--accent-text);
+  border-color: var(--accent);
+  font-weight: 600;
+}
+
+#btnSave:disabled {
+  background: #fff;
+  color: var(--text);
+  border-color: var(--border);
+}
+
+.muted { color: var(--muted); font-size: 0.85rem; }
+.hint { margin: 0 0 0.75rem; }
+
+.frame-display {
+  font-variant-numeric: tabular-nums;
+  font-size: 1.05rem;
+}
+
+video {
+  width: 100%;
+  max-height: 56vh;
+  background: #000;
+  border-radius: 6px;
+  display: block;
+}
+
+/* Video sits beside its controls instead of on top of them, so a tall
+   (portrait) video doesn't push everything else off-screen below it. */
+.player-layout {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 1.25rem;
+  margin-bottom: 0.6rem;
+}
+
+.player-video {
+  flex: 3 1 320px;
+  max-width: 680px;
+}
+
+.player-controls {
+  flex: 2 1 260px;
+  min-width: 240px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.mark-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.5rem 0;
+  border-top: 1px dashed var(--border);
+  border-bottom: 1px dashed var(--border);
+}
+
+button.primary {
+  background: var(--accent);
+  color: var(--accent-text);
+  border-color: var(--accent);
+  font-weight: 600;
+  padding: 0.55rem 1.1rem;
+}
+
+/* Red while armed to mark the end, so the state reads at a glance. */
+button.primary.recording {
+  background: #dc2626;
+  border-color: #dc2626;
+}
+
+.badge {
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  background: #f1f5f9;
+  border: 1px solid var(--border);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.85rem;
+}
+.badge.start { border-left: 3px solid #16a34a; }
+.badge.end { border-left: 3px solid #dc2626; }
+
+/* One flex item, not two — so Start/End wrap onto their own line
+   together instead of splitting apart from each other. */
+.start-end-group {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 0.6rem;
+}
+
+.timeline-wrap {
+  position: relative;
+  width: 100%;
+}
+
+.timeline-marks {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.mark-tick {
+  position: absolute;
+  top: 15%;
+  bottom: 15%;
+  width: 2px;
+  transform: translateX(-1px);
+}
+.mark-tick.start { background: #16a34a; }
+.mark-tick.end { background: #dc2626; }
+/* Already-saved reps: green (an overlapping one flips to red so the
+   problem is visible on the timeline itself, not just in the table). */
+.mark-tick.existing { background: #16a34a; opacity: 0.85; }
+.mark-tick.existing-overlap { background: #dc2626; opacity: 0.9; }
+
+.mark-range {
+  position: absolute;
+  top: 35%;
+  bottom: 35%;
+  border-radius: 2px;
+}
+.mark-range.pending { background: rgba(37, 99, 235, 0.25); }
+.mark-range.existing { background: rgba(22, 163, 74, 0.25); }
+.mark-range.existing-overlap { background: rgba(220, 38, 38, 0.3); }
+
+/* Caps the growing rep list to a fixed height with its own scrollbar
+   instead of pushing the rest of the page down as rows are added. */
+.table-wrap {
+  max-height: 340px;
+  overflow-y: auto;
+  overflow-x: auto;
+}
+
+/* width:auto (not 100%) so columns hug their actual content — a table
+   this narrow would otherwise get stretched across the whole panel. */
+table {
+  width: auto;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+
+th, td {
+  text-align: left;
+  padding: 0.25rem 0.5rem;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.row-actions {
+  display: flex;
+  gap: 0.35rem;
+}
+.row-actions button {
+  padding: 0.25rem 0.55rem;
+  font-size: 0.8rem;
+}
+
+/* Looks like plain text until you interact with it, so the table doesn't
+   look like a wall of form fields — but every value is editable in place.
+   Selector is "input.cell-input", not just ".cell-input": the earlier
+   input[type=...] rule above is an element+attribute selector, which
+   beats a plain class on specificity regardless of source order, so a
+   bare class here would (and did) lose the transparent-border override. */
+input.cell-input {
+  border: 1px solid transparent;
+  background: transparent;
+  padding: 0.1rem 0.25rem;
+  border-radius: 4px;
+  font: inherit;
+  color: inherit;
+}
+input.cell-input:hover, input.cell-input:focus {
+  border-color: var(--border);
+  background: #fff;
+}
+
+/* Per-column widths sized for real content (a video_id or person name
+   can run well past 10 characters; frame numbers can hit 5 digits) —
+   narrow only where the data actually is (rep #, exercise). */
+#repTable td:nth-child(1) .cell-input { width: 10em; }  /* video ID */
+#repTable td:nth-child(2) .cell-input { width: 3em; }   /* rep # */
+#repTable td:nth-child(3) .cell-input { width: 3.5em; } /* exercise */
+#repTable td:nth-child(4) .cell-input { width: 7.5em; } /* person */
+#repTable td:nth-child(5) .cell-input { width: 4.5em; } /* first frame */
+#repTable td:nth-child(6) .cell-input { width: 4.5em; } /* last frame */
+#repTable td:nth-child(8) .cell-input { width: 6.5em; } /* orientation */
+
+/* Length (col 7) is computed from First/Last, shown for reference only —
+   never written to the CSV — so it's plain text, not an input. */
+#repTable td:nth-child(7) {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+thead th {
+  position: sticky;
+  top: 0;
+  background: var(--panel);
+}
+
+tbody tr:nth-child(even) { background: #fafbfc; }
+tbody tr:hover { background: #f0f4ff; }
+
+.row-overlap, .row-overlap:nth-child(even) { background: #fef2f2; }
+.row-overlap:hover { background: #fde8e8; }
+
+.overlap-warning { color: var(--error); }
+
+/* The "Check" review panel: set apart from the marking controls above it
+   so it reads as its own mode, not more of the same row. */
+.review-panel {
+  border: 1px solid var(--border);
+  background: #f8fafc;
+  border-radius: 8px;
+  padding: 0.6rem 0.75rem;
+}
+.review-panel .row:last-child { margin-bottom: 0; }
+
+.nudge-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+.nudge-group button {
+  padding: 0.25rem 0.55rem;
+  line-height: 1;
+}
+.nudge-group input { width: 5em; text-align: center; }
+
+.status {
+  min-height: 1.2em;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.status.error { color: var(--error); }
+.status.success { color: var(--success); }

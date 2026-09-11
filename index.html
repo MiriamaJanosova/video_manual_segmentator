@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Repetition Segmentation Tool</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<h1>Repetition Segmentation Tool</h1>
+
+<section class="panel">
+  <h2>1. Video &amp; session info</h2>
+  <p class="muted hint">Set these once per video — each repetition you mark reuses them automatically. Change any of them any time; it applies from that point on.</p>
+  <div class="row">
+    <button id="btnOpenVideo">Open Video…</button>
+    <input type="file" id="videoFileInput" accept="video/*" hidden>
+    <span id="videoFileName" class="muted">No video loaded</span>
+  </div>
+  <div class="row">
+    <label>Video ID <input type="text" id="videoIdInput" placeholder="auto-filled from filename"></label>
+    <label>FPS <input type="number" id="fpsInput" value="30" min="1" max="240" step="0.001" style="width:5em"></label>
+  </div>
+  <div class="row">
+    <label>Person <input type="text" id="personInput" placeholder="who's in this video" style="width:9em"></label>
+    <button id="btnNewPerson" title="Use this if the person changes mid-video">New Person</button>
+    <label>Exercise ID <input type="text" id="exerciseIdInput" style="width:6em"></label>
+    <label>Camera / orientation
+      <select id="orientationSelect">
+        <option value="front">front</option>
+        <option value="half-profile">half-profile</option>
+        <option value="profile">profile</option>
+        <option value="back">back</option>
+        <option value="other">other…</option>
+      </select>
+    </label>
+    <input type="text" id="orientationOther" placeholder="custom orientation" hidden style="width:9em">
+  </div>
+</section>
+
+<section class="panel">
+  <h2>2. Output CSV</h2>
+  <div class="row">
+    <button id="btnLoadCsv">Load Existing CSV (Append)…</button>
+    <input type="file" id="csvFileInputFallback" accept=".csv,text/csv" hidden>
+    <span id="csvFileName" class="muted">No file loaded — Save will create a new file</span>
+    <button id="btnForgetCsv" disabled title="Stop appending to the loaded file (the file on disk is untouched until you Save)">Forget Loaded File</button>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>3. Player</h2>
+  <div class="player-layout">
+    <div class="player-video">
+      <video id="video"></video>
+    </div>
+
+    <div class="player-controls">
+      <strong id="frameDisplay" class="frame-display">Frame — / —</strong>
+
+      <div class="mark-row">
+        <label>Rep # <input type="number" id="repNumberInput" min="1" style="width:5em"></label>
+        <button id="btnMarkToggle" class="primary" disabled>Mark Start (S)</button>
+        <button id="btnClearMarks" disabled>Clear</button>
+        <span class="start-end-group">
+          <span id="startDisplay" class="badge start">Start: —</span>
+          <span id="endDisplay" class="badge end">End: —</span>
+        </span>
+      </div>
+      <p class="muted hint">Marking Start then End saves the repetition automatically.</p>
+
+      <div class="row">
+        <button id="btnPlayPause" disabled>Play</button>
+        <button id="btnStepBack" disabled title="Left arrow">◀ 1 frame</button>
+        <button id="btnStepFwd" disabled title="Right arrow">1 frame ▶</button>
+        <button id="btnJumpBack" disabled title="Shift+Left">-1s</button>
+        <button id="btnJumpFwd" disabled title="Shift+Right">+1s</button>
+        <label>Speed
+          <select id="speedSelect" disabled>
+            <option value="0.25">0.25x</option>
+            <option value="0.5">0.5x</option>
+            <option value="0.75">0.75x</option>
+            <option value="1" selected>1x</option>
+            <option value="1.25">1.25x</option>
+            <option value="1.5">1.5x</option>
+            <option value="2">2x</option>
+          </select>
+        </label>
+      </div>
+
+      <div id="reviewPanel" class="review-panel" hidden>
+        <div class="row">
+          <strong id="reviewTitle">Checking rep</strong>
+          <button id="btnReviewClose">Close</button>
+        </div>
+        <div class="row">
+          <button id="btnReviewPlay">▶ Play Rep</button>
+          <button id="btnReviewNext">Check Next Rep ▶</button>
+        </div>
+        <div class="row">
+          <label>Start
+            <span class="nudge-group">
+              <button type="button" id="btnReviewStartMinus">−</button>
+              <input type="number" id="reviewStartInput" style="width:5em">
+              <button type="button" id="btnReviewStartPlus">+</button>
+            </span>
+          </label>
+          <label>End
+            <span class="nudge-group">
+              <button type="button" id="btnReviewEndMinus">−</button>
+              <input type="number" id="reviewEndInput" style="width:5em">
+              <button type="button" id="btnReviewEndPlus">+</button>
+            </span>
+          </label>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row">
+    <label class="grow">Timeline
+      <div class="timeline-wrap">
+        <input type="range" id="seekMain" min="0" max="0" step="0.001" value="0" class="full">
+        <div id="timelineMarks" class="timeline-marks"></div>
+      </div>
+    </label>
+  </div>
+
+  <div class="row">
+    <label class="grow">Zoom window — a short, precise slice for landing exactly on one frame
+      <input type="range" id="seekZoom" min="0" max="0" step="0.001" value="0" class="full">
+    </label>
+    <label>Window (s) <input type="number" id="zoomWindowSize" value="2" min="0.2" max="30" step="0.1" style="width:5em"></label>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>4. Repetitions (this session)</h2>
+  <div class="row">
+    <p class="muted hint" style="margin:0">Click any value below to edit it, or hit Check to review/adjust a repetition frame by frame.</p>
+    <button id="btnClearSession" disabled title="Removes only the rows added this session, below — an appended file's existing rows are untouched">Clear All Reps</button>
+  </div>
+  <p id="overlapWarning" class="hint overlap-warning" hidden>⚠ Some repetitions below overlap in frame range — rows are highlighted; check their First/Last frames.</p>
+  <div class="table-wrap">
+    <table id="repTable">
+      <thead>
+        <tr>
+          <th>Video ID</th><th>Rep #</th><th>Exercise</th><th>Person</th>
+          <th>First</th><th>Last</th><th>Length</th><th>Orient.</th><th></th>
+        </tr>
+      </thead>
+      <tbody id="repTableBody"></tbody>
+    </table>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>5. Save</h2>
+  <div class="row">
+    <button id="btnSave">Save / Export CSV</button>
+  </div>
+  <div id="statusBar" class="status"></div>
+</section>
+
+<script src="app.js"></script>
+</body>
+</html>
