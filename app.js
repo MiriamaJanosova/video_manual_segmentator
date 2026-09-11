@@ -99,6 +99,7 @@ const videoFileInput = document.getElementById('videoFileInput');
 const videoFileName = document.getElementById('videoFileName');
 const videoIdInput = document.getElementById('videoIdInput');
 const fpsInput = document.getElementById('fpsInput');
+const btnDetectFps = document.getElementById('btnDetectFps');
 const personInput = document.getElementById('personInput');
 const btnNewPerson = document.getElementById('btnNewPerson');
 
@@ -308,9 +309,103 @@ video.addEventListener('loadedmetadata', () => {
   seekMain.max = video.duration;
   seekMain.step = 1 / getFps();
   setControlsEnabled(true);
+  btnDetectFps.disabled = false;
   updateFrameDisplay();
   updateRepNumberDefault();
+  autoDetectFps();
 });
+
+/* ---------- FPS auto-detection ---------- */
+// <video> never exposes the source's actual frame rate — there's no
+// standard API for it — so this estimates it by briefly playing (muted)
+// and counting decoded frames per second of media time via
+// requestVideoFrameCallback, which fires once per frame actually
+// presented (already used above for the preview auto-stop). Chrome/Edge
+// only; elsewhere FPS stays empty and must be entered manually, same as
+// before this existed.
+const FPS_DETECT_SAMPLE_MS = 800;
+
+// Constant-frame-rate video is almost always one of a handful of known
+// rates; a raw measured value is noisy (dropped frames under load, sample
+// jitter), so snap to the nearest common one when it's close enough —
+// e.g. reporting 29.97 instead of a jittery 29.94.
+const COMMON_FPS = [15, 20, 23.976, 24, 25, 29.97, 30, 48, 50, 59.94, 60, 90, 120];
+
+function snapFps(measured) {
+  let best = null, bestRelDiff = Infinity;
+  for (const f of COMMON_FPS) {
+    const relDiff = Math.abs(measured - f) / f;
+    if (relDiff < bestRelDiff) { bestRelDiff = relDiff; best = f; }
+  }
+  return bestRelDiff < 0.015 ? best : Math.round(measured * 1000) / 1000;
+}
+
+// Resolves to a measured fps (float), or null if detection isn't
+// supported, the clip is too short to sample, or nothing else went right.
+// Always restores the video to exactly how it found it (position,
+// muted, playing/paused) — detection is an implementation detail, not
+// something that should visibly change the player state.
+function detectFps() {
+  return new Promise((resolve) => {
+    if (!video.requestVideoFrameCallback) { resolve(null); return; }
+
+    const wasMuted = video.muted;
+    const wasPlaying = !video.paused;
+    const startTime = video.currentTime;
+    let settled = false;
+    let firstMeta = null;
+    let timeoutId = null;
+
+    function onEnded() { finish(null); } // clip too short to sample reliably
+
+    function finish(result) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutId);
+      video.removeEventListener('ended', onEnded);
+      video.pause();
+      video.currentTime = startTime;
+      video.muted = wasMuted;
+      if (wasPlaying) video.play();
+      resolve(result);
+    }
+
+    function onFrame(now, metadata) {
+      if (settled) return;
+      if (!firstMeta) { firstMeta = metadata; video.requestVideoFrameCallback(onFrame); return; }
+      const elapsed = metadata.mediaTime - firstMeta.mediaTime;
+      const frames = metadata.presentedFrames - firstMeta.presentedFrames;
+      if (elapsed * 1000 >= FPS_DETECT_SAMPLE_MS) finish(frames / elapsed);
+      else video.requestVideoFrameCallback(onFrame);
+    }
+
+    video.addEventListener('ended', onEnded, { once: true });
+    video.muted = true;
+    video.requestVideoFrameCallback(onFrame);
+    video.play().catch(() => finish(null));
+    timeoutId = setTimeout(() => finish(null), FPS_DETECT_SAMPLE_MS * 4); // safety net if rVFC stalls
+  });
+}
+
+async function autoDetectFps() {
+  if (!video.requestVideoFrameCallback) {
+    status("FPS auto-detect isn't supported in this browser (needs Chrome/Edge) — enter it manually.", 'error');
+    return;
+  }
+  status('Detecting FPS…');
+  const measured = await detectFps();
+  if (measured && isFinite(measured) && measured > 0) {
+    const snapped = snapFps(measured);
+    fpsInput.value = snapped;
+    seekMain.step = 1 / getFps();
+    updateFrameDisplay();
+    status(`Detected ${snapped} fps (measured ${measured.toFixed(3)}) — double-check it, edit if it looks wrong.`, 'success');
+  } else {
+    status("Couldn't auto-detect FPS (clip too short?) — enter it manually.", 'error');
+  }
+}
+
+btnDetectFps.addEventListener('click', autoDetectFps);
 
 videoIdInput.addEventListener('input', updateRepNumberDefault);
 videoIdInput.addEventListener('change', trySaveRepetition);
