@@ -340,6 +340,15 @@ tbody tr:hover { background: #f0f4ff; }
   min-height: 1.2em;
   font-size: 0.85rem;
   color: var(--muted);
+  /* Global message line (moved out of the Save section — it reports on
+     actions from any section, not just Save), kept visible while
+     scrolling through the form/table below it. */
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--bg);
+  padding: 0.35rem 0;
+  margin-bottom: 0.5rem;
 }
 
 .status.error { color: var(--error); }
