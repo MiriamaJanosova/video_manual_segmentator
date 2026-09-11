@@ -22,7 +22,7 @@
   <div class="row">
     <label>Video ID <input type="text" id="videoIdInput" placeholder="auto-filled from filename" autocomplete="off"></label>
     <label>FPS <input type="number" id="fpsInput" placeholder="required" min="1" max="240" step="0.001" style="width:5em" autocomplete="off"></label>
-    <button type="button" id="btnDetectFps" disabled title="Auto-detect by briefly sampling playback — Chrome/Edge only; always double-check the result">Detect</button>
+    <button type="button" id="btnDetectFps" disabled title="Auto-detect: reads it from the file itself for MP4/MOV, otherwise estimates by briefly sampling playback (Chrome/Edge only). Always double-check the result.">Detect</button>
   </div>
   <div class="row">
     <label>Person <input type="text" id="personInput" placeholder="who's in this video" style="width:9em" autocomplete="off"></label>

@@ -90,6 +90,7 @@ let pendingEnd = null;
 let markPhase = 'start'; // 'start' | 'end' — drives the single toggle button
 let seekMainDragging = false;
 let zoomDragging = false;
+let currentVideoFile = null; // the raw File, kept around for FPS container-metadata parsing
 
 /* ---------- Element refs ---------- */
 
@@ -291,6 +292,7 @@ videoFileInput.addEventListener('change', async () => {
     renderTable();
   }
 
+  currentVideoFile = file;
   const url = URL.createObjectURL(file);
   video.src = url;
   video.load();
@@ -317,18 +319,24 @@ video.addEventListener('loadedmetadata', () => {
 
 /* ---------- FPS auto-detection ---------- */
 // <video> never exposes the source's actual frame rate — there's no
-// standard API for it — so this estimates it by briefly playing (muted)
-// and counting decoded frames per second of media time via
-// requestVideoFrameCallback, which fires once per frame actually
-// presented (already used above for the preview auto-stop). Chrome/Edge
-// only; elsewhere FPS stays empty and must be entered manually, same as
-// before this existed.
-const FPS_DETECT_SAMPLE_MS = 800;
+// standard API for it, even though the file itself really does contain
+// it. Two ways to get it, tried in order:
+//
+//  1. Read it straight out of the container (exact): MP4/MOV files are
+//     ISO-BMFF boxes, and the first video track's sample table records
+//     each frame's real duration — see detectFpsFromContainer. Works in
+//     every browser; just needs a handful of small reads from the file
+//     via File.slice (not a full read into memory).
+//  2. Estimate by briefly playing (muted) and counting decoded frames per
+//     second of media time via requestVideoFrameCallback — see
+//     detectFpsFromPlayback. Fallback for containers (1) can't parse
+//     (webm/mkv/avi, or a malformed/oddly-laid-out mp4). Chrome/Edge only.
 
 // Constant-frame-rate video is almost always one of a handful of known
-// rates; a raw measured value is noisy (dropped frames under load, sample
-// jitter), so snap to the nearest common one when it's close enough —
-// e.g. reporting 29.97 instead of a jittery 29.94.
+// rates; a measured/estimated value can be slightly noisy (dropped frames
+// under load, sample jitter), so snap to the nearest common one when it's
+// close enough — e.g. reporting 29.97 instead of a jittery 29.94. An exact
+// container read rarely needs this, but it's harmless when it doesn't.
 const COMMON_FPS = [15, 20, 23.976, 24, 25, 29.97, 30, 48, 50, 59.94, 60, 90, 120];
 
 function snapFps(measured) {
@@ -340,12 +348,141 @@ function snapFps(measured) {
   return bestRelDiff < 0.015 ? best : Math.round(measured * 1000) / 1000;
 }
 
-// Resolves to a measured fps (float), or null if detection isn't
-// supported, the clip is too short to sample, or nothing else went right.
-// Always restores the video to exactly how it found it (position,
-// muted, playing/paused) — detection is an implementation detail, not
-// something that should visibly change the player state.
-function detectFps() {
+// ---- 1. Container metadata (MP4/MOV — ISO-BMFF) ----
+
+// Reads one box header at `offset`: { type, size, headerSize, offset }.
+// size/headerSize account for the 64-bit "extended size" and "extends to
+// EOF" forms a box's 32-bit size field can take. Only ever reads 16 bytes
+// via File.slice, regardless of the file's actual size.
+async function readBoxHeader(file, offset) {
+  const buf = new Uint8Array(await file.slice(offset, offset + 16).arrayBuffer());
+  if (buf.length < 8) return null;
+  const dv = new DataView(buf.buffer);
+  let size = dv.getUint32(0);
+  const type = String.fromCharCode(buf[4], buf[5], buf[6], buf[7]);
+  let headerSize = 8;
+  if (size === 1) {
+    if (buf.length < 16) return null;
+    size = Number(dv.getBigUint64(8));
+    headerSize = 16;
+  } else if (size === 0) {
+    size = file.size - offset;
+  }
+  if (size < headerSize) return null;
+  return { type, size, headerSize, offset };
+}
+
+// First direct child of `type` within [start, end), or null. Walks only
+// box headers (8-16 bytes each), skipping over each box's full payload via
+// its size field — so this never reads the (potentially huge) 'mdat' box.
+async function findBox(file, type, start, end) {
+  let offset = start;
+  while (offset + 8 <= end) {
+    const box = await readBoxHeader(file, offset);
+    if (!box) return null;
+    if (box.type === type) return box;
+    offset += box.size;
+  }
+  return null;
+}
+
+async function findAllBoxes(file, type, start, end) {
+  const results = [];
+  let offset = start;
+  while (offset + 8 <= end) {
+    const box = await readBoxHeader(file, offset);
+    if (!box) break;
+    if (box.type === type) results.push(box);
+    offset += box.size;
+  }
+  return results;
+}
+
+// 'stts' (time-to-sample): version(1)+flags(3), entry_count(4), then
+// entry_count * [sample_count(4), sample_delta(4)] — the exact duration
+// (in the track's timescale) of every run of samples sharing one duration.
+function parseStts(bytes) {
+  const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const entryCount = dv.getUint32(4);
+  let totalSamples = 0, totalDuration = 0;
+  let p = 8;
+  for (let i = 0; i < entryCount && p + 8 <= bytes.length; i++) {
+    const count = dv.getUint32(p);
+    const delta = dv.getUint32(p + 4);
+    totalSamples += count;
+    totalDuration += count * delta;
+    p += 8;
+  }
+  return { totalSamples, totalDuration };
+}
+
+// Walks moov > trak (first one whose hdlr says 'vide') > mdia > mdhd
+// (timescale) + minf > stbl > stts (sample durations), and computes
+// fps = totalSamples * timescale / totalDuration. That's the file's own
+// average frame rate — exact for constant-frame-rate video, which is
+// what this is aiming to support. Resolves null on anything that isn't
+// this box layout (not ISO-BMFF, or an unexpected/truncated structure).
+async function detectFpsFromContainer(file) {
+  if (!file) return null;
+  try {
+    const moov = await findBox(file, 'moov', 0, file.size);
+    if (!moov) return null;
+    const moovStart = moov.offset + moov.headerSize;
+    const moovEnd = moov.offset + moov.size;
+
+    for (const trak of await findAllBoxes(file, 'trak', moovStart, moovEnd)) {
+      const trakStart = trak.offset + trak.headerSize;
+      const trakEnd = trak.offset + trak.size;
+
+      const mdia = await findBox(file, 'mdia', trakStart, trakEnd);
+      if (!mdia) continue;
+      const mdiaStart = mdia.offset + mdia.headerSize;
+      const mdiaEnd = mdia.offset + mdia.size;
+
+      const hdlr = await findBox(file, 'hdlr', mdiaStart, mdiaEnd);
+      if (!hdlr) continue;
+      const hdlrBytes = new Uint8Array(await file.slice(hdlr.offset + hdlr.headerSize, hdlr.offset + hdlr.size).arrayBuffer());
+      // version(1)+flags(3), pre_defined(4), then handler_type(4) as a FourCC.
+      const handlerType = String.fromCharCode(hdlrBytes[8], hdlrBytes[9], hdlrBytes[10], hdlrBytes[11]);
+      if (handlerType !== 'vide') continue; // audio/subtitle/etc. track — not what we want
+
+      const mdhd = await findBox(file, 'mdhd', mdiaStart, mdiaEnd);
+      const minf = await findBox(file, 'minf', mdiaStart, mdiaEnd);
+      if (!mdhd || !minf) continue;
+
+      const mdhdBytes = new Uint8Array(await file.slice(mdhd.offset + mdhd.headerSize, mdhd.offset + mdhd.size).arrayBuffer());
+      const mdhdDv = new DataView(mdhdBytes.buffer);
+      // version(1 byte) decides whether the surrounding fields are 32- or 64-bit.
+      const timescale = mdhdBytes[0] === 1 ? mdhdDv.getUint32(20) : mdhdDv.getUint32(12);
+
+      const stbl = await findBox(file, 'stbl', minf.offset + minf.headerSize, minf.offset + minf.size);
+      if (!stbl) continue;
+      const stts = await findBox(file, 'stts', stbl.offset + stbl.headerSize, stbl.offset + stbl.size);
+      if (!stts) continue;
+
+      const sttsBytes = new Uint8Array(await file.slice(stts.offset + stts.headerSize, stts.offset + stts.size).arrayBuffer());
+      const { totalSamples, totalDuration } = parseStts(sttsBytes);
+      if (totalSamples > 0 && totalDuration > 0 && timescale > 0) {
+        return (totalSamples * timescale) / totalDuration;
+      }
+    }
+  } catch (err) {
+    // Any parsing hiccup — unexpected structure, truncated slice — just
+    // falls through to the playback-sampling fallback below.
+  }
+  return null;
+}
+
+// ---- 2. Playback sampling (estimate, fallback) ----
+
+const FPS_SAMPLE_MS = 800;
+
+// Resolves to an estimated fps (float), or null if unsupported, the clip
+// is too short to sample, or nothing else went right. Always restores the
+// video to exactly how it found it (position, muted, playing/paused) —
+// detection is an implementation detail, not something that should
+// visibly change the player state.
+function detectFpsFromPlayback() {
   return new Promise((resolve) => {
     if (!video.requestVideoFrameCallback) { resolve(null); return; }
 
@@ -375,7 +512,7 @@ function detectFps() {
       if (!firstMeta) { firstMeta = metadata; video.requestVideoFrameCallback(onFrame); return; }
       const elapsed = metadata.mediaTime - firstMeta.mediaTime;
       const frames = metadata.presentedFrames - firstMeta.presentedFrames;
-      if (elapsed * 1000 >= FPS_DETECT_SAMPLE_MS) finish(frames / elapsed);
+      if (elapsed * 1000 >= FPS_SAMPLE_MS) finish(frames / elapsed);
       else video.requestVideoFrameCallback(onFrame);
     }
 
@@ -383,25 +520,37 @@ function detectFps() {
     video.muted = true;
     video.requestVideoFrameCallback(onFrame);
     video.play().catch(() => finish(null));
-    timeoutId = setTimeout(() => finish(null), FPS_DETECT_SAMPLE_MS * 4); // safety net if rVFC stalls
+    timeoutId = setTimeout(() => finish(null), FPS_SAMPLE_MS * 4); // safety net if rVFC stalls
   });
 }
 
+function applyDetectedFps(value, source) {
+  const snapped = snapFps(value);
+  fpsInput.value = snapped;
+  seekMain.step = 1 / getFps();
+  updateFrameDisplay();
+  const rawNote = Math.abs(snapped - value) > 0.0005 ? ` (raw ${value.toFixed(3)})` : '';
+  status(`Detected ${snapped} fps ${source}${rawNote} — double-check it, edit if it looks wrong.`, 'success');
+}
+
 async function autoDetectFps() {
-  if (!video.requestVideoFrameCallback) {
-    status("FPS auto-detect isn't supported in this browser (needs Chrome/Edge) — enter it manually.", 'error');
+  status('Detecting FPS…');
+
+  const exact = await detectFpsFromContainer(currentVideoFile);
+  if (exact && isFinite(exact) && exact > 0) {
+    applyDetectedFps(exact, "from the file's own frame-timing table");
     return;
   }
-  status('Detecting FPS…');
-  const measured = await detectFps();
-  if (measured && isFinite(measured) && measured > 0) {
-    const snapped = snapFps(measured);
-    fpsInput.value = snapped;
-    seekMain.step = 1 / getFps();
-    updateFrameDisplay();
-    status(`Detected ${snapped} fps (measured ${measured.toFixed(3)}) — double-check it, edit if it looks wrong.`, 'success');
+
+  if (!video.requestVideoFrameCallback) {
+    status("Couldn't read FPS from the file, and this browser can't estimate it from playback either (needs Chrome/Edge) — enter it manually.", 'error');
+    return;
+  }
+  const estimated = await detectFpsFromPlayback();
+  if (estimated && isFinite(estimated) && estimated > 0) {
+    applyDetectedFps(estimated, 'by sampling playback (the file\'s own metadata could not be read)');
   } else {
-    status("Couldn't auto-detect FPS (clip too short?) — enter it manually.", 'error');
+    status("Couldn't auto-detect FPS (clip too short / unsupported format?) — enter it manually.", 'error');
   }
 }
 
