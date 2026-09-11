@@ -19,13 +19,13 @@
     <span id="videoFileName" class="muted">No video loaded</span>
   </div>
   <div class="row">
-    <label>Video ID <input type="text" id="videoIdInput" placeholder="auto-filled from filename"></label>
+    <label>Video ID <input type="text" id="videoIdInput" placeholder="auto-filled from filename" autocomplete="off"></label>
     <label>FPS <input type="number" id="fpsInput" placeholder="required" min="1" max="240" step="0.001" style="width:5em" autocomplete="off"></label>
   </div>
   <div class="row">
-    <label>Person <input type="text" id="personInput" placeholder="who's in this video" style="width:9em"></label>
+    <label>Person <input type="text" id="personInput" placeholder="who's in this video" style="width:9em" autocomplete="off"></label>
     <button id="btnNewPerson" title="Use this if the person changes mid-video">New Person</button>
-    <label>Exercise ID <input type="text" id="exerciseIdInput" style="width:6em"></label>
+    <label>Exercise ID <input type="text" id="exerciseIdInput" style="width:6em" autocomplete="off"></label>
     <label>Camera / orientation
       <select id="orientationSelect">
         <option value="front">front</option>
@@ -35,7 +35,7 @@
         <option value="other">other…</option>
       </select>
     </label>
-    <input type="text" id="orientationOther" placeholder="custom orientation" hidden style="width:9em">
+    <input type="text" id="orientationOther" placeholder="custom orientation" hidden style="width:9em" autocomplete="off">
   </div>
 </section>
 
