@@ -600,10 +600,21 @@ function resetMarks() {
   updateMarkDisplays();
 }
 
+// If the video is playing when you mark, freeze it on that exact frame for
+// half a second before auto-resuming — a brief visual confirmation of the
+// frame you just marked, without permanently interrupting playback. Marking
+// while already paused (e.g. after stepping frame-by-frame) is unaffected.
+const MARK_PAUSE_MS = 500;
+let markPauseTimeout = null;
+
 function toggleMark() {
   if (!videoLoaded) return;
   cancelPreview();
   const f = frameFromTime(video.currentTime);
+  const wasPlaying = !video.paused;
+  if (markPauseTimeout) { clearTimeout(markPauseTimeout); markPauseTimeout = null; }
+  if (wasPlaying) video.pause();
+
   if (markPhase === 'start') {
     if (pendingEnd !== null) status('Discarded previous unsaved start/end marks.', 'error');
     pendingStart = f;
@@ -619,6 +630,13 @@ function toggleMark() {
     // click. If something up there was left blank, trySaveRepetition()
     // says so and the change listeners below retry once it's filled in.
     trySaveRepetition();
+  }
+
+  if (wasPlaying) {
+    markPauseTimeout = setTimeout(() => {
+      markPauseTimeout = null;
+      video.play();
+    }, MARK_PAUSE_MS);
   }
 }
 
