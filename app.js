@@ -609,6 +609,10 @@ let markPauseTimeout = null;
 
 function toggleMark() {
   if (!videoLoaded) return;
+  // Gate here, not just at save time: frame numbers are computed from the
+  // current FPS the instant you mark, so marking on a wrong/missing FPS
+  // and fixing it afterwards wouldn't retroactively correct them.
+  if (!(parseFloat(fpsInput.value) > 0)) { status('Set FPS before marking — frame numbers depend on it.', 'error'); return; }
   cancelPreview();
   const f = frameFromTime(video.currentTime);
   const wasPlaying = !video.paused;
@@ -644,6 +648,10 @@ function toggleMark() {
 function missingFields() {
   const missing = [];
   if (!videoIdInput.value.trim()) missing.push('Video ID');
+  // Not auto-detected from the video file — must be entered explicitly
+  // every time, since a silently-wrong default would throw off every
+  // frame number computed from it.
+  if (!(parseFloat(fpsInput.value) > 0)) missing.push('FPS');
   if (!personInput.value.trim()) missing.push('Person');
   if (!exerciseIdInput.value.trim()) missing.push('Exercise ID');
   if (!currentOrientation()) missing.push('Orientation');
