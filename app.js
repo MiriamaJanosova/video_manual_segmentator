@@ -91,6 +91,12 @@ function parseLoadedCsv(text) {
 
 let loadedRows = [];      // rows parsed from an appended existing CSV
 let sessionRows = [];     // rows added this session
+// True if sessionRows has changed (added/edited/deleted) since the last
+// successful Save. Save deliberately doesn't clear sessionRows — the
+// table keeps showing what you just recorded so you can still Check/edit
+// it — so "sessionRows is non-empty" alone can't tell "just saved,
+// nothing's changed" apart from "genuinely unsaved". This can.
+let sessionDirty = false;
 let csvFileHandle = null; // File System Access handle, if available
 // True only after explicitly using "Load Existing CSV (Append)" — the
 // deliberate opt-in to accumulate many videos into one shared output
@@ -284,24 +290,32 @@ videoFileInput.addEventListener('change', async () => {
   // Each video gets its own Repetitions session — otherwise the table
   // below keeps accumulating across every video opened this sitting into
   // one long, hard-to-scan list, and "Check" can only ever review the
-  // currently open video anyway. Force a save of anything pending first
-  // so switching videos never silently loses unsaved marks.
+  // currently open video anyway. sessionRows is cleared for the incoming
+  // video below regardless; the confirm-and-save is only for genuinely
+  // unsaved work, gated on sessionDirty rather than just sessionRows.length
+  // — Save deliberately leaves sessionRows in place afterward (so the
+  // table keeps showing what you just recorded), so a plain length check
+  // would ask again on the very next switch even with nothing changed
+  // since that save.
   if (sessionRows.length > 0) {
-    const ok = confirm(
-      `Save the ${sessionRows.length} unsaved repetition(s) for the current video before switching?\n\n` +
-      `OK — save, then open the new video.\nCancel — stay on the current video.`
-    );
-    if (!ok) { videoFileInput.value = ''; return; }
-    if (!(await saveCsv())) {
-      videoFileInput.value = '';
-      status('Save was not completed — video not switched.', 'error');
-      return;
+    if (sessionDirty) {
+      const ok = confirm(
+        `Save the ${sessionRows.length} unsaved repetition(s) for the current video before switching?\n\n` +
+        `OK — save, then open the new video.\nCancel — stay on the current video.`
+      );
+      if (!ok) { videoFileInput.value = ''; return; }
+      if (!(await saveCsv())) {
+        videoFileInput.value = '';
+        status('Save was not completed — video not switched.', 'error');
+        return;
+      }
     }
-    // Now safely on disk. In append mode, fold into history so rep-
-    // numbering/overlap checks still see them if this video is reopened
-    // later — pointless otherwise, since the file itself is about to be
-    // detached below anyway. Either way, clear the visible table for the
-    // incoming video.
+    // Already safely on disk either way (just now, or from an earlier
+    // save with nothing changed since). In append mode, fold into history
+    // so rep-numbering/overlap checks still see them if this video is
+    // reopened later — pointless otherwise, since the file itself is
+    // about to be detached below anyway. Either way, clear the visible
+    // table for the incoming video.
     if (appendMode) loadedRows = loadedRows.concat(sessionRows);
     sessionRows = [];
     renderTable();
@@ -849,6 +863,7 @@ function toggleReviewPlay() {
 function applyReviewFrame(field, value) {
   if (!reviewingRow || isNaN(value)) return;
   reviewingRow[field] = Math.max(0, value);
+  sessionDirty = true;
   if (field === 'last_frame') previewEndTime = timeFromFrame(reviewingRow.last_frame);
   video.pause();
   video.currentTime = timeFromFrame(reviewingRow[field]);
@@ -1011,6 +1026,7 @@ function makeCellInput(row, field, isNumber) {
   input.addEventListener('change', () => {
     row[field] = isNumber ? (parseInt(input.value, 10) || 0) : input.value.trim();
     input.value = row[field];
+    sessionDirty = true;
     // Keep the review panel in sync if this is the row currently under
     // "Check" — editing it in the table directly should look the same as
     // editing it via the panel's own fields.
@@ -1079,6 +1095,7 @@ function renderTable() {
     btnFlagWeird.classList.toggle('flagged', isFlagged);
     btnFlagWeird.addEventListener('click', () => {
       r.correctness_score = isFlagged ? '' : 6;
+      sessionDirty = true;
       renderTable();
     });
     tdActions.appendChild(btnFlagWeird);
@@ -1087,6 +1104,7 @@ function renderTable() {
     btnDel.textContent = 'Delete';
     btnDel.addEventListener('click', () => {
       sessionRows.splice(idx, 1);
+      sessionDirty = true;
       if (reviewingRow === r) closeReview();
       renderTable();
       updateRepNumberDefault();
@@ -1120,6 +1138,7 @@ function addRepetitionRow() {
     video_front_problem: ''
   };
   sessionRows.push(row);
+  sessionDirty = true;
   renderTable();
 
   resetMarks();
@@ -1145,6 +1164,7 @@ btnClearSession.addEventListener('click', () => {
     : '';
   if (!confirm(`Remove all ${sessionRows.length} repetition(s) added this session? This can't be undone.${overwriteWarning}`)) return;
   sessionRows = [];
+  sessionDirty = true; // memory now differs from whatever's on disk, if anything was ever saved
   closeReview();
   renderTable();
   resetMarks();
@@ -1191,6 +1211,7 @@ async function saveCsv() {
       await writable.write(text);
       await writable.close();
       status(`Saved ${allRows.length} rows to ${csvFileHandle.name}.`, 'success');
+      sessionDirty = false;
       return true;
     } catch (err) {
       status('Could not write to file (' + err.message + ') — falling back to download.', 'error');
@@ -1214,6 +1235,7 @@ async function saveCsv() {
       // to detach from it again, so it needs to actually be usable now.
       btnForgetCsv.disabled = false;
       status(`Saved ${allRows.length} rows to ${handle.name}.`, 'success');
+      sessionDirty = false;
       return true;
     } catch (err) {
       if (err.name === 'AbortError') { status('Save cancelled.'); return false; }
@@ -1224,6 +1246,7 @@ async function saveCsv() {
   const filename = suggestedCsvName();
   downloadTextAsFile(text, filename);
   status(`Downloaded ${allRows.length} rows as ${filename}. Your browser can't save in place, so replace the old file manually if you were appending.`, 'success');
+  sessionDirty = false;
   return true;
 }
 
