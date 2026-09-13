@@ -1229,58 +1229,76 @@ function downloadTextAsFile(text, filename) {
 // (to disk, or downloaded when the browser can't write in place) — false
 // on cancel/failure. Shared by the Save button and the forced save before
 // switching videos, below.
+//
+// Everything below is wrapped in an outer try/catch, and every caught
+// error is both shown via status() and logged via console.error — a
+// silent failure here (nothing visible happens, nothing in the console)
+// previously meant something threw outside the two inner try blocks, with
+// no way to even tell what. That must never happen again: whatever goes
+// wrong now, it's visible somewhere.
 async function saveCsv() {
-  const allRows = loadedRows.concat(sessionRows);
-  if (allRows.length === 0) { status('Nothing to save yet — add at least one repetition.'); return false; }
-  const text = buildCsvText(allRows);
+  try {
+    const allRows = loadedRows.concat(sessionRows);
+    if (allRows.length === 0) { status('Nothing to save yet — add at least one repetition.'); return false; }
+    const text = buildCsvText(allRows);
 
-  if (csvFileHandle) {
-    try {
-      if ((await csvFileHandle.queryPermission({ mode: 'readwrite' })) !== 'granted') {
-        const perm = await csvFileHandle.requestPermission({ mode: 'readwrite' });
-        if (perm !== 'granted') throw new Error('write permission denied');
+    if (csvFileHandle) {
+      try {
+        if ((await csvFileHandle.queryPermission({ mode: 'readwrite' })) !== 'granted') {
+          const perm = await csvFileHandle.requestPermission({ mode: 'readwrite' });
+          if (perm !== 'granted') throw new Error('write permission denied — pick "Load Existing CSV" again, or use Forget File to start a new one');
+        }
+        const writable = await csvFileHandle.createWritable();
+        await writable.write(text);
+        await writable.close();
+        status(`Saved ${allRows.length} rows to ${csvFileHandle.name}.`, 'success');
+        sessionDirty = false;
+        return true;
+      } catch (err) {
+        console.error('Save: writing to the attached file failed, falling back to Save As', err);
+        status('Could not write to file (' + err.message + ') — falling back to download.', 'error');
       }
-      const writable = await csvFileHandle.createWritable();
-      await writable.write(text);
-      await writable.close();
-      status(`Saved ${allRows.length} rows to ${csvFileHandle.name}.`, 'success');
-      sessionDirty = false;
-      return true;
-    } catch (err) {
-      status('Could not write to file (' + err.message + ') — falling back to download.', 'error');
     }
-  }
 
-  if (window.showSaveFilePicker) {
-    try {
-      const handle = await window.showSaveFilePicker({
-        suggestedName: suggestedCsvName(),
-        types: [{ description: 'CSV files', accept: { 'text/csv': ['.csv'] } }]
-      });
-      csvFileHandle = handle;
-      const writable = await handle.createWritable();
-      await writable.write(text);
-      await writable.close();
-      csvFileNameEl.textContent = `${handle.name} (${allRows.length} rows)`;
-      csvFileNameEl.dataset.rawName = handle.name;
-      // Save just started writing to this file every time from now on
-      // (same as if it had been loaded for append) — "Forget File" is how
-      // to detach from it again, so it needs to actually be usable now.
-      btnForgetCsv.disabled = false;
-      status(`Saved ${allRows.length} rows to ${handle.name}.`, 'success');
-      sessionDirty = false;
-      return true;
-    } catch (err) {
-      if (err.name === 'AbortError') { status('Save cancelled.'); return false; }
-      status('Save failed (' + err.message + ') — falling back to download.', 'error');
+    if (window.showSaveFilePicker) {
+      try {
+        const handle = await window.showSaveFilePicker({
+          suggestedName: suggestedCsvName(),
+          types: [{ description: 'CSV files', accept: { 'text/csv': ['.csv'] } }]
+        });
+        csvFileHandle = handle;
+        const writable = await handle.createWritable();
+        await writable.write(text);
+        await writable.close();
+        csvFileNameEl.textContent = `${handle.name} (${allRows.length} rows)`;
+        csvFileNameEl.dataset.rawName = handle.name;
+        // Save just started writing to this file every time from now on
+        // (same as if it had been loaded for append) — "Forget File" is how
+        // to detach from it again, so it needs to actually be usable now.
+        btnForgetCsv.disabled = false;
+        status(`Saved ${allRows.length} rows to ${handle.name}.`, 'success');
+        sessionDirty = false;
+        return true;
+      } catch (err) {
+        if (err.name === 'AbortError') { status('Save cancelled.'); return false; }
+        console.error('Save: showSaveFilePicker failed, falling back to download', err);
+        status('Save failed (' + err.message + ') — falling back to download.', 'error');
+      }
     }
-  }
 
-  const filename = suggestedCsvName();
-  downloadTextAsFile(text, filename);
-  status(`Downloaded ${allRows.length} rows as ${filename}. Your browser can't save in place, so replace the old file manually if you were appending.`, 'success');
-  sessionDirty = false;
-  return true;
+    const filename = suggestedCsvName();
+    downloadTextAsFile(text, filename);
+    status(`Downloaded ${allRows.length} rows as ${filename}. Your browser can't save in place, so replace the old file manually if you were appending.`, 'success');
+    sessionDirty = false;
+    return true;
+  } catch (err) {
+    // Anything unexpected that slipped past the two inner try blocks above
+    // (there shouldn't be any such path, but "shouldn't" is exactly how
+    // this went silent before) — surfaced loudly rather than swallowed.
+    console.error('Save failed unexpectedly', err);
+    status('Save failed unexpectedly: ' + err.message + ' (see browser console for details).', 'error');
+    return false;
+  }
 }
 
 btnSave.addEventListener('click', () => { saveCsv(); });
