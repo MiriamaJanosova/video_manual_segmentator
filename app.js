@@ -606,10 +606,13 @@ function onCsvLoaded(text, filename) {
   status(`Loaded ${loadedRows.length} existing rows from ${filename}. New rows will be appended on Save.`);
 }
 
-// Detaches from the loaded file entirely (separate from "Clear All Reps",
-// which only touches rows added this session). The file on disk is not
-// touched — this just stops treating it as the append target and drops
-// its rows from rep-numbering/timeline-mark context.
+// Detaches from the current output file entirely — both a file opened via
+// "Load Existing CSV (Append)" and one Save picked on its own the first
+// time you saved (Save silently keeps writing to whatever file it last
+// used or was pointed at; this is the only way to make the next Save ask
+// "Save As" again instead, e.g. to start a separate file for a new video).
+// Separate from "Clear All Reps", which only touches rows added this
+// session. The file(s) on disk are not touched by clicking this.
 btnForgetCsv.addEventListener('click', () => {
   if (loadedRows.length && !confirm(`Forget the ${loadedRows.length} loaded row(s)? They won't be included next time you Save (the file on disk itself is not changed).`)) {
     return;
@@ -1101,11 +1104,22 @@ function addRepetitionRow() {
 }
 
 // Clears only this session's newly-added rows (the table above) — an
-// appended file's already-loaded rows are untouched; use "Forget Loaded
-// File" (section 2) to drop those instead.
+// appended file's already-loaded rows are untouched; use "Forget File"
+// (section 2) to drop those instead.
+//
+// Save always rewrites the whole output file from whatever's currently in
+// loadedRows + sessionRows — there's no separate on-disk "undo" of a
+// prior Save. So if some of these rows were already saved to the file
+// currently attached (csvFileHandle), clearing them here and then Saving
+// again drops them from that file. Warn about that specifically, rather
+// than the generic "can't be undone" alone — that's what actually caused
+// data loss in practice (see feedback).
 btnClearSession.addEventListener('click', () => {
   if (!sessionRows.length) return;
-  if (!confirm(`Remove all ${sessionRows.length} repetition(s) added this session? This can't be undone.`)) return;
+  const overwriteWarning = csvFileHandle
+    ? ` If any of these were already saved to ${csvFileHandle.name}, the next Save will overwrite that file without them.`
+    : '';
+  if (!confirm(`Remove all ${sessionRows.length} repetition(s) added this session? This can't be undone.${overwriteWarning}`)) return;
   sessionRows = [];
   closeReview();
   renderTable();
@@ -1171,6 +1185,10 @@ async function saveCsv() {
       await writable.close();
       csvFileNameEl.textContent = `${handle.name} (${allRows.length} rows)`;
       csvFileNameEl.dataset.rawName = handle.name;
+      // Save just started writing to this file every time from now on
+      // (same as if it had been loaded for append) — "Forget File" is how
+      // to detach from it again, so it needs to actually be usable now.
+      btnForgetCsv.disabled = false;
       status(`Saved ${allRows.length} rows to ${handle.name}.`, 'success');
       return true;
     } catch (err) {
