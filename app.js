@@ -872,7 +872,10 @@ function applyReviewFrame(field, value) {
 }
 
 function findNextRepForVideo(row) {
-  const sameVideo = sessionRows
+  // currentVideoTableRows() (defined below) is exactly the same row set
+  // the table itself shows for this video, loadedRows included — so
+  // "Check Next Rep" can step through those too, not just this session's.
+  const sameVideo = currentVideoTableRows()
     .filter(r => r.video_id === row.video_id)
     .sort((a, b) => (parseInt(a.first_frame, 10) || 0) - (parseInt(b.first_frame, 10) || 0));
   const idx = sameVideo.indexOf(row);
@@ -1043,11 +1046,37 @@ function makeCellInput(row, field, isNumber) {
   return input;
 }
 
+// Rows to show in the table: sessionRows (added this session) plus any
+// loadedRows belonging to the currently open video — e.g. rows folded in
+// from an earlier pass at this same video (see the video-switch handler),
+// or ones this video already had in an appended CSV. Without this, those
+// rows were invisible and un-deletable: Save writes loadedRows too, but
+// only sessionRows ever appeared in this table, so there was no way to
+// fix or remove a bad row that happened to live in loadedRows instead —
+// editing/deleting only ever touched sessionRows, silently no-op-ing on
+// anything from loadedRows. Other videos' loadedRows stay excluded, so
+// this doesn't turn back into the long unscoped list "each video gets
+// its own session" was added to avoid.
+function currentVideoTableRows() {
+  const videoId = videoIdInput.value.trim();
+  return loadedRows.filter(r => r.video_id === videoId).concat(sessionRows);
+}
+
+// Deletes/edits need to mutate whichever of loadedRows/sessionRows
+// actually holds this row — a table row no longer implies sessionRows.
+function removeRow(row) {
+  let idx = sessionRows.indexOf(row);
+  if (idx !== -1) { sessionRows.splice(idx, 1); return; }
+  idx = loadedRows.indexOf(row);
+  if (idx !== -1) loadedRows.splice(idx, 1);
+}
+
 function renderTable() {
   repTableBody.innerHTML = '';
-  const overlaps = computeOverlappingRows(sessionRows);
+  const tableRows = currentVideoTableRows();
+  const overlaps = computeOverlappingRows(tableRows);
 
-  sessionRows.forEach((r, idx) => {
+  tableRows.forEach((r) => {
     const tr = document.createElement('tr');
     if (overlaps.has(r)) {
       tr.classList.add('row-overlap');
@@ -1107,7 +1136,7 @@ function renderTable() {
     const btnDel = document.createElement('button');
     btnDel.textContent = 'Delete';
     btnDel.addEventListener('click', () => {
-      sessionRows.splice(idx, 1);
+      removeRow(r);
       sessionDirty = true;
       if (reviewingRow === r) closeReview();
       renderTable();
