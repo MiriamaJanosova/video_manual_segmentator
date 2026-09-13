@@ -1034,7 +1034,11 @@ function makeCellInput(row, field, isNumber) {
       if (field === 'last_frame') previewEndTime = timeFromFrame(row.last_frame);
       renderReviewPanel();
     }
-    renderTimelineMarks();
+    // Full re-render, not just renderTimelineMarks(): overlap detection
+    // (row highlighting + the "⚠ overlap" banner) only recomputes inside
+    // renderTable() — a bare timeline-marks refresh left a stale overlap
+    // warning on screen even after editing First/Last resolved it.
+    renderTable();
   });
   return input;
 }
