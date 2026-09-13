@@ -48,9 +48,9 @@
     <button id="btnLoadCsv">Load Existing CSV (Append)…</button>
     <input type="file" id="csvFileInputFallback" accept=".csv,text/csv" hidden>
     <span id="csvFileName" class="muted">No file loaded — Save will create a new file</span>
-    <button id="btnForgetCsv" disabled title="Detach from the current output file — whether opened here or picked the first time you clicked Save. The file on disk is untouched; the next Save asks where to save a new one.">Forget File</button>
+    <button id="btnForgetCsv" disabled title="Exit append mode and detach from the current output file. The file on disk is untouched; the next Save asks where to save a new one, and each video goes back to getting its own file automatically.">Forget File</button>
   </div>
-  <p class="muted hint">Save always writes to the same file once one is picked or loaded here. To send a different video's repetitions to a separate file, click "Forget File" first — otherwise everything keeps going into the one file.</p>
+  <p class="muted hint">Each video gets its own output file automatically — opening a new one detaches from whatever file the last video saved to, so Save asks where to save a new one. Load an existing CSV here to opt into the opposite instead: everything saved from then on appends into that one shared file across every video you open, until you click "Forget File".</p>
 </section>
 
 <section class="panel">

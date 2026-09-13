@@ -92,6 +92,11 @@ function parseLoadedCsv(text) {
 let loadedRows = [];      // rows parsed from an appended existing CSV
 let sessionRows = [];     // rows added this session
 let csvFileHandle = null; // File System Access handle, if available
+// True only after explicitly using "Load Existing CSV (Append)" — the
+// deliberate opt-in to accumulate many videos into one shared output
+// file. Otherwise each video gets its own file automatically (see the
+// auto-detach in the videoFileInput 'change' handler below).
+let appendMode = false;
 let videoLoaded = false;
 let pendingStart = null;
 let pendingEnd = null;
@@ -292,12 +297,28 @@ videoFileInput.addEventListener('change', async () => {
       status('Save was not completed — video not switched.', 'error');
       return;
     }
-    // Now safely on disk; fold into history (so rep-numbering/overlap
-    // checks still see them if this video is reopened later) and clear
-    // the visible table for the incoming video.
-    loadedRows = loadedRows.concat(sessionRows);
+    // Now safely on disk. In append mode, fold into history so rep-
+    // numbering/overlap checks still see them if this video is reopened
+    // later — pointless otherwise, since the file itself is about to be
+    // detached below anyway. Either way, clear the visible table for the
+    // incoming video.
+    if (appendMode) loadedRows = loadedRows.concat(sessionRows);
     sessionRows = [];
     renderTable();
+  }
+
+  // Each video gets its own output file by default — otherwise "save this
+  // .mp4's data into its own .csv" silently turns into "everything opened
+  // this sitting piles into whatever file Save happened to create first".
+  // Detach here so the next Save asks "Save As" again, scoped to this
+  // video. Skipped in append mode (Load Existing CSV) — accumulating many
+  // videos into one shared file is the whole point there.
+  if (!appendMode) {
+    loadedRows = [];
+    csvFileHandle = null;
+    csvFileNameEl.textContent = 'No file loaded — Save will create a new file';
+    delete csvFileNameEl.dataset.rawName;
+    btnForgetCsv.disabled = true;
   }
 
   currentVideoFile = file;
@@ -599,6 +620,7 @@ csvFileInputFallback.addEventListener('change', () => {
 
 function onCsvLoaded(text, filename) {
   loadedRows = parseLoadedCsv(text);
+  appendMode = true; // explicit opt-in: keep accumulating videos into this one file
   csvFileNameEl.textContent = `${filename} (${loadedRows.length} existing rows)`;
   csvFileNameEl.dataset.rawName = filename;
   btnForgetCsv.disabled = false;
@@ -606,11 +628,12 @@ function onCsvLoaded(text, filename) {
   status(`Loaded ${loadedRows.length} existing rows from ${filename}. New rows will be appended on Save.`);
 }
 
-// Detaches from the current output file entirely — both a file opened via
-// "Load Existing CSV (Append)" and one Save picked on its own the first
-// time you saved (Save silently keeps writing to whatever file it last
-// used or was pointed at; this is the only way to make the next Save ask
-// "Save As" again instead, e.g. to start a separate file for a new video).
+// Exits append mode and detaches from the current output file entirely —
+// both a file opened via "Load Existing CSV (Append)" and one Save picked
+// on its own the first time you saved. Each video already gets its own
+// output file automatically (see the videoFileInput 'change' handler
+// above); this is for backing out of append mode itself, once you no
+// longer want every video accumulating into that one shared file.
 // Separate from "Clear All Reps", which only touches rows added this
 // session. The file(s) on disk are not touched by clicking this.
 btnForgetCsv.addEventListener('click', () => {
@@ -619,6 +642,7 @@ btnForgetCsv.addEventListener('click', () => {
   }
   loadedRows = [];
   csvFileHandle = null;
+  appendMode = false;
   csvFileNameEl.textContent = 'No file loaded — Save will create a new file';
   delete csvFileNameEl.dataset.rawName;
   btnForgetCsv.disabled = true;
