@@ -42,8 +42,16 @@ function parseCSV(text, delimiter) {
 }
 
 function csvField(value) {
-  const s = (value === undefined || value === null) ? '' : String(value);
-  if (s.includes(DELIM) || s.includes('"') || s.includes('\n') || s.includes('\r')) {
+  let s = (value === undefined || value === null) ? '' : String(value);
+  // Normalize any embedded line break to plain \n. A pasted value with a
+  // bare \r (old Mac-style line breaks, still produced by some sources)
+  // would otherwise survive quoting untouched — and a lone \r anywhere in
+  // the file, even inside quotes, is exactly what makes some Excel
+  // versions misdetect the whole file as classic-Mac CSV and mangle it on
+  // save. Row separators (buildCsvText) are always real \r\n regardless;
+  // this only affects line breaks inside a field's own value.
+  s = s.replace(/\r\n?/g, '\n');
+  if (s.includes(DELIM) || s.includes('"') || s.includes('\n')) {
     return '"' + s.replace(/"/g, '""') + '"';
   }
   return s;
