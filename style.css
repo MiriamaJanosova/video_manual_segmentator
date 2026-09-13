@@ -263,6 +263,13 @@ th, td {
   padding: 0.25rem 0.55rem;
   font-size: 0.8rem;
 }
+/* Same red as the marking button uses for "armed", so an already-flagged
+   repetition reads at a glance. */
+.row-actions button.flagged {
+  background: #dc2626;
+  border-color: #dc2626;
+  color: #fff;
+}
 
 /* Looks like plain text until you interact with it, so the table doesn't
    look like a wall of form fields — but every value is editable in place.
@@ -293,6 +300,7 @@ input.cell-input:hover, input.cell-input:focus {
 #repTable td:nth-child(5) .cell-input { width: 4.5em; } /* first frame */
 #repTable td:nth-child(6) .cell-input { width: 4.5em; } /* last frame */
 #repTable td:nth-child(8) .cell-input { width: 6.5em; } /* orientation */
+#repTable td:nth-child(9) .cell-input { width: 3em; }   /* grade */
 
 /* Length (col 7) is computed from First/Last, shown for reference only —
    never written to the CSV — so it's plain text, not an input. */

@@ -1016,6 +1016,13 @@ function renderTable() {
     tdOrient.appendChild(makeCellInput(r, 'front_cam_orientation', false));
     tr.appendChild(tdOrient);
 
+    // Plain text, not ROW_NUMBER_FIELDS: an empty grade means "not graded
+    // yet", which a forced-to-0-on-edit numeric field (like First/Last)
+    // would lose.
+    const tdGrade = document.createElement('td');
+    tdGrade.appendChild(makeCellInput(r, 'correctness_score', false));
+    tr.appendChild(tdGrade);
+
     const tdActions = document.createElement('td');
     tdActions.className = 'row-actions';
 
@@ -1024,6 +1031,22 @@ function renderTable() {
     btnCheck.title = 'Review this repetition here: play/pause, adjust Start/End, step to the next one';
     btnCheck.addEventListener('click', () => openReview(r));
     tdActions.appendChild(btnCheck);
+
+    // Quick one-click flag for a rep whose execution was so uncoordinated
+    // that boundaries/grading barely apply (e.g. flailing rather than a
+    // recognizable rep) — sets Grade to the reserved value 6, one step
+    // past the normal 1-5 scale. Toggles back off (grade cleared) if
+    // clicked again while already flagged.
+    const btnFlagWeird = document.createElement('button');
+    const isFlagged = String(r.correctness_score) === '6';
+    btnFlagWeird.textContent = isFlagged ? '🚩 Flagged' : '🚩 Weird (6)';
+    btnFlagWeird.title = 'Toggle: flag this repetition as very weird/uncoordinated execution (sets Grade to 6)';
+    btnFlagWeird.classList.toggle('flagged', isFlagged);
+    btnFlagWeird.addEventListener('click', () => {
+      r.correctness_score = isFlagged ? '' : 6;
+      renderTable();
+    });
+    tdActions.appendChild(btnFlagWeird);
 
     const btnDel = document.createElement('button');
     btnDel.textContent = 'Delete';
